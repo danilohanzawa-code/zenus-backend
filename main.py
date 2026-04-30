@@ -1,5 +1,6 @@
 """
 🪐 ZENUS — Backend (Bot + API)
+Requer: pip install python-telegram-bot==20.7 fastapi uvicorn
 """
 
 import json, os, logging, hashlib, hmac
@@ -9,6 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio, threading, uvicorn
+
+# =============================================
+#   ⚙️ CONFIGURAÇÕES — EDITE AQUI
+# =============================================
 
 BOT_TOKEN    = "8367291634:AAHArFOPmFAWab6QRDG2t5aSBsvw8XsTxCI"
 BOT_USERNAME = "ZenusOfficial_bot"
@@ -22,8 +27,8 @@ REDES_SOCIAIS = {
 }
 
 VIDEOS = [
-    {"id": "v1", "titulo": "O que é ZENUS?",    "url": "https://youtu.be/SEU_LINK1", "codigo": "ZEN1", "moedas": 300},
-    {"id": "v2", "titulo": "Como ganhar cripto", "url": "https://youtu.be/SEU_LINK2", "codigo": "ZEN2", "moedas": 300},
+    {"id": "v1", "titulo": "O que é ZENUS?",     "url": "https://youtu.be/SEU_LINK1", "codigo": "ZEN1", "moedas": 300},
+    {"id": "v2", "titulo": "Como ganhar cripto",  "url": "https://youtu.be/SEU_LINK2", "codigo": "ZEN2", "moedas": 300},
 ]
 
 MISSOES = [
@@ -64,6 +69,31 @@ def get_user(d, uid):
     return d[uid]
 
 # =============================================
+#   🔐 VALIDAÇÃO TELEGRAM
+# =============================================
+
+def validar_init_data(init_data: str) -> dict | None:
+    try:
+        from urllib.parse import parse_qs, unquote
+        parsed = parse_qs(init_data)
+        hash_recebido = parsed.get("hash", [None])[0]
+        if not hash_recebido:
+            return None
+        data_check = "\n".join(
+            f"{k}={v[0]}" for k, v in sorted(parsed.items()) if k != "hash"
+        )
+        secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        hash_calculado = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(hash_calculado, hash_recebido):
+            return None
+        user_str = parsed.get("user", [None])[0]
+        if user_str:
+            return json.loads(user_str)
+        return None
+    except:
+        return None
+
+# =============================================
 #   🌐 API FASTAPI
 # =============================================
 
@@ -73,9 +103,13 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.get("/api/user/{uid}")
 async def api_get_user(uid: str):
     d = carregar()
-    if uid not in d:
-        raise HTTPException(404, "Usuário não encontrado")
-    u = d[uid]
+    # ✅ FIX 2: Cria o usuário automaticamente se não existir (evita erro 404 no WebApp)
+    u = get_user(d, uid)
+    if not u["nome"]:
+        u["nome"] = f"Usuário {uid[:6]}"
+        u["moedas"] += MOEDAS_INICIO
+        salvar(d)
+
     hoje = date.today().isoformat()
     missoes_hoje = u["missoes_feitas"] if u["missoes_data"] == hoje else []
     return {
@@ -200,7 +234,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # =============================================
 
 def run_bot():
-    """Roda o bot em thread separada com seu próprio event loop."""
+    """✅ FIX 1: Roda o bot em thread separada com seu próprio event loop (corrige erro Python 3.13)"""
     logging.basicConfig(level=logging.INFO)
 
     async def _start_bot():
@@ -208,14 +242,17 @@ def run_bot():
         bot_app.add_handler(CommandHandler("start", start))
         await bot_app.initialize()
         await bot_app.start()
-        await bot_app.updater.start_polling()
-        # Mantém o bot rodando indefinidamente
-        await asyncio.Event().wait()
+        # ✅ drop_pending_updates=True evita erro 409 Conflict ao reiniciar
+        await bot_app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        await asyncio.Event().wait()  # mantém o bot rodando
 
-    asyncio.run(_start_bot())  # ✅ Cria event loop próprio para a thread
+    asyncio.run(_start_bot())  # cria event loop próprio para a thread
 
 if __name__ == "__main__":
+    # Bot roda em thread separada, API na thread principal
     t = threading.Thread(target=run_bot, daemon=True)
     t.start()
-    # API roda na thread principal
     uvicorn.run(app, host="0.0.0.0", port=8000)
