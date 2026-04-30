@@ -1,6 +1,5 @@
 """
 🪐 ZENUS — Backend (Bot + API)
-Requer: pip install python-telegram-bot==20.7 fastapi uvicorn
 """
 
 import json, os, logging, hashlib, hmac
@@ -11,30 +10,26 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio, threading, uvicorn
 
-# =============================================
-#   ⚙️ CONFIGURAÇÕES — EDITE AQUI
-# =============================================
-
 BOT_TOKEN    = "8367291634:AAHArFOPmFAWab6QRDG2t5aSBsvw8XsTxCI"
 BOT_USERNAME = "ZenusOfficial_bot"
-WEBAPP_URL   = "https://web-production-6c35.up.railway.app"  # URL do seu frontend no Vercel
+WEBAPP_URL   = "https://web-production-6c35.up.railway.app"
 
 REDES_SOCIAIS = {
-    "youtube":   {"nome": "YouTube",   "url": "https://youtube.com/@seucanal",   "moedas": 500, "emoji": "▶️"},
-    "tiktok":    {"nome": "TikTok",    "url": "https://tiktok.com/@seuperfil",   "moedas": 400, "emoji": "🎵"},
+    "youtube":   {"nome": "YouTube",   "url": "https://youtube.com/@seucanal",     "moedas": 500, "emoji": "▶️"},
+    "tiktok":    {"nome": "TikTok",    "url": "https://tiktok.com/@seuperfil",     "moedas": 400, "emoji": "🎵"},
     "instagram": {"nome": "Instagram", "url": "https://instagram.com/danilo.hanm", "moedas": 400, "emoji": "📸"},
-    "twitter":   {"nome": "Twitter/X", "url": "https://x.com/seuperfil",         "moedas": 300, "emoji": "🐦"},
+    "twitter":   {"nome": "Twitter/X", "url": "https://x.com/seuperfil",           "moedas": 300, "emoji": "🐦"},
 }
 
 VIDEOS = [
-    {"id": "v1", "titulo": "O que é ZENUS?",          "url": "https://youtu.be/SEU_LINK1", "codigo": "ZEN1", "moedas": 300},
-    {"id": "v2", "titulo": "Como ganhar cripto",       "url": "https://youtu.be/SEU_LINK2", "codigo": "ZEN2", "moedas": 300},
+    {"id": "v1", "titulo": "O que é ZENUS?",    "url": "https://youtu.be/SEU_LINK1", "codigo": "ZEN1", "moedas": 300},
+    {"id": "v2", "titulo": "Como ganhar cripto", "url": "https://youtu.be/SEU_LINK2", "codigo": "ZEN2", "moedas": 300},
 ]
 
 MISSOES = [
-    {"id": "m1", "titulo": "Check-in diário",          "moedas": 50},
-    {"id": "m2", "titulo": "Compartilhe o ZENUS",      "moedas": 100},
-    {"id": "m3", "titulo": "Visite nosso canal hoje",  "moedas": 75},
+    {"id": "m1", "titulo": "Check-in diário",         "moedas": 50},
+    {"id": "m2", "titulo": "Compartilhe o ZENUS",     "moedas": 100},
+    {"id": "m3", "titulo": "Visite nosso canal hoje", "moedas": 75},
 ]
 
 MOEDAS_INICIO    = 100
@@ -67,31 +62,6 @@ def get_user(d, uid):
             "entrou_em": datetime.now().isoformat(),
         }
     return d[uid]
-
-# =============================================
-#   🔐 VALIDAÇÃO TELEGRAM
-# =============================================
-
-def validar_init_data(init_data: str) -> dict | None:
-    try:
-        from urllib.parse import parse_qs, unquote
-        parsed = parse_qs(init_data)
-        hash_recebido = parsed.get("hash", [None])[0]
-        if not hash_recebido:
-            return None
-        data_check = "\n".join(
-            f"{k}={v[0]}" for k, v in sorted(parsed.items()) if k != "hash"
-        )
-        secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-        hash_calculado = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(hash_calculado, hash_recebido):
-            return None
-        user_str = parsed.get("user", [None])[0]
-        if user_str:
-            return json.loads(user_str)
-        return None
-    except:
-        return None
 
 # =============================================
 #   🌐 API FASTAPI
@@ -202,7 +172,8 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(ref_id,
                     f"🎉 *+{MOEDAS_REFERRAL} ZENUS!*\nSeu convite foi aceito por *{u['nome']}*!",
                     parse_mode="Markdown")
-            except: pass
+            except:
+                pass
 
     if novo and not u.get("referral_by"):
         u["moedas"] += MOEDAS_INICIO
@@ -229,18 +200,22 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # =============================================
 
 def run_bot():
+    """Roda o bot em thread separada com seu próprio event loop."""
     logging.basicConfig(level=logging.INFO)
-    bot_app = Application.builder().token(BOT_TOKEN).build()
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.run_polling()
 
-def run_api():
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    async def _start_bot():
+        bot_app = Application.builder().token(BOT_TOKEN).build()
+        bot_app.add_handler(CommandHandler("start", start))
+        await bot_app.initialize()
+        await bot_app.start()
+        await bot_app.updater.start_polling()
+        # Mantém o bot rodando indefinidamente
+        await asyncio.Event().wait()
+
+    asyncio.run(_start_bot())  # ✅ Cria event loop próprio para a thread
 
 if __name__ == "__main__":
-    t1 = threading.Thread(target=run_bot)
-    t2 = threading.Thread(target=run_api)
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
+    t = threading.Thread(target=run_bot, daemon=True)
+    t.start()
+    # API roda na thread principal
+    uvicorn.run(app, host="0.0.0.0", port=8000)
