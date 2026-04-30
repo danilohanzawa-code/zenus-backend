@@ -3,7 +3,7 @@
 Requer: pip install python-telegram-bot==20.7 fastapi uvicorn
 """
 
-import json, os, logging, hashlib, hmac
+import json, os, logging, hashlib, hmac, time
 from datetime import datetime, date
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +17,7 @@ import asyncio, threading, uvicorn
 
 BOT_TOKEN    = "8367291634:AAHArFOPmFAWab6QRDG2t5aSBsvw8XsTxCI"
 BOT_USERNAME = "ZenusOfficial_bot"
-WEBAPP_URL   = "https://web-production-6c35.up.railway.app"
+WEBAPP_URL   = "https://zenus-frontend.vercel.app"  # ✅ URL correta do Vercel
 
 REDES_SOCIAIS = {
     "youtube":   {"nome": "YouTube",   "url": "https://youtube.com/@seucanal",     "moedas": 500, "emoji": "▶️"},
@@ -69,41 +69,20 @@ def get_user(d, uid):
     return d[uid]
 
 # =============================================
-#   🔐 VALIDAÇÃO TELEGRAM
-# =============================================
-
-def validar_init_data(init_data: str) -> dict | None:
-    try:
-        from urllib.parse import parse_qs, unquote
-        parsed = parse_qs(init_data)
-        hash_recebido = parsed.get("hash", [None])[0]
-        if not hash_recebido:
-            return None
-        data_check = "\n".join(
-            f"{k}={v[0]}" for k, v in sorted(parsed.items()) if k != "hash"
-        )
-        secret = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-        hash_calculado = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(hash_calculado, hash_recebido):
-            return None
-        user_str = parsed.get("user", [None])[0]
-        if user_str:
-            return json.loads(user_str)
-        return None
-    except:
-        return None
-
-# =============================================
 #   🌐 API FASTAPI
 # =============================================
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+@app.get("/")
+async def root():
+    return {"status": "ZENUS API online 🪐"}
+
 @app.get("/api/user/{uid}")
 async def api_get_user(uid: str):
     d = carregar()
-    # ✅ FIX 2: Cria o usuário automaticamente se não existir (evita erro 404 no WebApp)
+    # ✅ Cria o usuário automaticamente se não existir
     u = get_user(d, uid)
     if not u["nome"]:
         u["nome"] = f"Usuário {uid[:6]}"
@@ -234,25 +213,31 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # =============================================
 
 def run_bot():
-    """✅ FIX 1: Roda o bot em thread separada com seu próprio event loop (corrige erro Python 3.13)"""
-    logging.basicConfig(level=logging.INFO)
-
+    """✅ Bot roda em thread separada com event loop próprio"""
     async def _start_bot():
         bot_app = Application.builder().token(BOT_TOKEN).build()
         bot_app.add_handler(CommandHandler("start", start))
         await bot_app.initialize()
         await bot_app.start()
-        # ✅ drop_pending_updates=True evita erro 409 Conflict ao reiniciar
+        # ✅ drop_pending_updates evita erro 409 ao reiniciar
         await bot_app.updater.start_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES
         )
-        await asyncio.Event().wait()  # mantém o bot rodando
+        await asyncio.Event().wait()
 
-    asyncio.run(_start_bot())  # cria event loop próprio para a thread
+    asyncio.run(_start_bot())
 
 if __name__ == "__main__":
-    # Bot roda em thread separada, API na thread principal
+    logging.basicConfig(level=logging.INFO)
+
+    # ✅ Bot em thread separada com daemon=True
     t = threading.Thread(target=run_bot, daemon=True)
     t.start()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # ✅ Aguarda 2s para o bot iniciar sem conflito
+    time.sleep(2)
+
+    # ✅ Usa a variável PORT do Railway automaticamente
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
