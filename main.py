@@ -17,7 +17,7 @@ import asyncio, threading, uvicorn
 
 BOT_TOKEN    = "8367291634:AAHArFOPmFAWab6QRDG2t5aSBsvw8XsTxCI"
 BOT_USERNAME = "ZenusOfficial_bot"
-WEBAPP_URL   = "https://zenus-frontend.vercel.app/"  # URL do seu frontend no Vercel
+WEBAPP_URL   = "https://web-production-6c35.up.railway.app"  # URL do seu frontend no Vercel
 
 REDES_SOCIAIS = {
     "youtube":   {"nome": "YouTube",   "url": "https://youtube.com/@seucanal",   "moedas": 500, "emoji": "▶️"},
